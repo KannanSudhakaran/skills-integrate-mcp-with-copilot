@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
       activitiesList.innerHTML = "";
 
       // Populate activities list
+      const isAdmin = !!localStorage.getItem('admin_token');
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
@@ -21,17 +22,19 @@ document.addEventListener("DOMContentLoaded", () => {
         const spotsLeft =
           details.max_participants - details.participants.length;
 
-        // Create participants HTML with delete icons instead of bullet points
+        // Create participants HTML with delete icons (only visible to logged-in admins)
         const participantsHTML =
           details.participants.length > 0
             ? `<div class="participants-section">
               <h5>Participants:</h5>
               <ul class="participants-list">
                 ${details.participants
-                  .map(
-                    (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
-                  )
+                  .map((email) => {
+                    const deleteBtn = isAdmin
+                      ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>`
+                      : '';
+                    return `<li><span class="participant-email">${email}</span>${deleteBtn}</li>`;
+                  })
                   .join("")}
               </ul>
             </div>`
@@ -74,12 +77,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = button.getAttribute("data-email");
 
     try {
+      const token = localStorage.getItem('admin_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       const response = await fetch(
-        `/activities/${encodeURIComponent(
-          activity
-        )}/unregister?email=${encodeURIComponent(email)}`,
+        `/activities/${encodeURIComponent(activity)}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers,
         }
       );
 
@@ -156,5 +160,57 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  // Create a simple admin login button
+  const adminControls = document.createElement('div');
+  adminControls.style.margin = '8px 0';
+
+  const loginBtn = document.createElement('button');
+  loginBtn.textContent = 'Teacher login';
+  loginBtn.id = 'admin-login-btn';
+  loginBtn.addEventListener('click', async () => {
+    const username = prompt('Teacher username');
+    const password = prompt('Teacher password');
+    if (!username || !password) return;
+    try {
+      const res = await fetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        localStorage.setItem('admin_token', data.token);
+        alert('Logged in as teacher');
+        fetchActivities();
+      } else {
+        alert(data.detail || 'Login failed');
+      }
+    } catch (err) {
+      console.error('Login error', err);
+      alert('Login error');
+    }
+  });
+
+  const logoutBtn = document.createElement('button');
+  logoutBtn.textContent = 'Teacher logout';
+  logoutBtn.style.marginLeft = '8px';
+  logoutBtn.addEventListener('click', async () => {
+    const token = localStorage.getItem('admin_token');
+    if (!token) return alert('Not logged in');
+    try {
+      await fetch('/admin/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+    } catch (e) {
+      // ignore
+    }
+    localStorage.removeItem('admin_token');
+    alert('Logged out');
+    fetchActivities();
+  });
+
+  adminControls.appendChild(loginBtn);
+  adminControls.appendChild(logoutBtn);
+  // Insert admin controls above signup form
+  signupForm.parentNode.insertBefore(adminControls, signupForm);
+
   fetchActivities();
 });
